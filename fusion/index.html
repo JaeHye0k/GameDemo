@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE - NOT FOR PRODUCTION
+  Question: 용도 없는 스텟만 있는 상태에서, 합성 결과를 보는 것 자체가 보상이 되는가?
+  Date: 2026-08-08
+
+  의도적으로 빠진 것: 진화, 사냥 화면, 스텟의 실제 용도, 저장, 아트, 사운드.
+  스텟에 용도가 없는 것은 버그가 아니라 실험 설계다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>요괴병기 — 합성 루프 프로토타입</title>
+<style>
+  :root{
+    --ink-0:#0d0d11; --ink-1:#15151c; --ink-2:#1e1e28; --ink-3:#2b2b38;
+    --fg:#c9c9d4; --fg-dim:#7a7a8c;
+    --ok:#3fe0d0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--ink-0); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI","Malgun Gothic",sans-serif;
+    min-height:100vh; padding:16px; font-size:14px; line-height:1.5;
+  }
+  header{
+    display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+    border-bottom:1px solid var(--ink-3); padding-bottom:10px; margin-bottom:16px;
+  }
+  h1{font-size:16px; font-weight:600; letter-spacing:.02em}
+  .sub{color:var(--fg-dim); font-size:12px}
+  .clock{margin-left:auto; color:var(--fg-dim); font-variant-numeric:tabular-nums; font-size:12px}
+
+  .wrap{display:grid; grid-template-columns:1fr 320px; gap:16px; max-width:1000px; margin:0 auto}
+  @media (max-width:820px){ .wrap{grid-template-columns:1fr} }
+
+  .panel{background:var(--ink-1); border:1px solid var(--ink-3); border-radius:10px; padding:14px}
+  .panel h2{font-size:12px; font-weight:600; color:var(--fg-dim); letter-spacing:.08em;
+    text-transform:uppercase; margin-bottom:10px; display:flex; align-items:center; gap:8px}
+  .count{color:var(--fg); font-variant-numeric:tabular-nums}
+
+  /* ---- inventory ---- */
+  #inv{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:8px;
+    max-height:420px; overflow-y:auto}
+  .card{
+    background:var(--ink-2); border:1px solid var(--ink-3); border-radius:8px;
+    padding:8px 6px; cursor:pointer; text-align:center; transition:border-color .12s, transform .08s;
+    position:relative;
+  }
+  .card:hover{border-color:var(--fg-dim)}
+  .card:active{transform:scale(.97)}
+  .card.picked{border-color:var(--ok); box-shadow:0 0 0 1px var(--ok) inset}
+  .card .nm{font-size:11px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .card .gr{font-size:10px; margin-top:1px}
+
+  /* ---- bench ---- */
+  .bench{display:flex; align-items:center; justify-content:center; gap:12px; margin:6px 0 14px}
+  .slot{
+    width:96px; height:110px; border:1px dashed var(--ink-3); border-radius:10px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:4px; cursor:pointer; background:var(--ink-2);
+  }
+  .slot.filled{border-style:solid}
+  .slot .ph{color:var(--fg-dim); font-size:11px}
+  .slot .nm{font-size:11px}
+  .slot .gr{font-size:10px}
+  .plus{color:var(--fg-dim); font-size:18px}
+
+  button{
+    font:inherit; color:var(--ink-0); background:var(--ok); border:0; border-radius:8px;
+    padding:9px 16px; cursor:pointer; font-weight:600; letter-spacing:.02em;
+  }
+  button:disabled{background:var(--ink-3); color:var(--fg-dim); cursor:not-allowed}
+  button.ghost{background:transparent; color:var(--fg); border:1px solid var(--ink-3); font-weight:400}
+  button.ghost:disabled{color:var(--fg-dim)}
+  button.small{padding:5px 10px; font-size:12px}
+  /* 조기 종료 버튼 — 헤더에서 시계 옆. armed 는 2단계 확인의 중간 상태 */
+  #endTest{align-self:center; padding:7px 12px; font-size:12px; white-space:nowrap}
+  #endTest.armed{border-color:#ffd34d; color:#ffd34d}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .fullw{width:100%; justify-content:center; display:flex}
+
+  .log{margin-top:12px; font-size:12px; color:var(--fg-dim); min-height:20px}
+
+  /* ---- codex ---- */
+  #codex{display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:8px}
+  .cx{background:var(--ink-2); border:1px solid var(--ink-3); border-radius:8px; padding:8px 4px;
+    text-align:center; font-size:11px}
+  .cx.locked{opacity:.35}
+  .cx .nm{margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+  /* ---- overlays ---- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(5,5,8,.86); display:none;
+    align-items:center; justify-content:center; padding:20px; z-index:10; overflow-y:auto;
+  }
+  .overlay.on{display:flex}
+  .modal{background:var(--ink-1); border:1px solid var(--ink-3); border-radius:12px;
+    padding:24px; max-width:420px; width:100%; text-align:center;
+    max-height:calc(100vh - 40px); overflow-y:auto}
+  .modal h3{font-size:15px; margin-bottom:4px}
+  .banner{color:var(--ok); font-size:12px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:10px}
+  .opts{margin:12px 0; font-size:12px; color:var(--fg-dim); line-height:1.8}
+  .opts div{color:var(--fg)}
+  .report{text-align:left}
+  .report h3{text-align:center; margin-bottom:14px}
+  .report table{width:100%; border-collapse:collapse; font-size:13px}
+  .report td{padding:6px 0; border-bottom:1px solid var(--ink-3)}
+  .report td:last-child{text-align:right; font-variant-numeric:tabular-nums; color:var(--ok)}
+  .report .note{margin-top:14px; font-size:12px; color:var(--fg-dim); line-height:1.6}
+
+  /* 수집 고지 배너 — 끄는 스위치가 아니라 알리는 배너다 */
+  .privacy{background:var(--ink-1); border:1px solid var(--ink-3); border-radius:8px;
+    padding:9px 12px; margin-bottom:12px; font-size:12px; color:var(--fg-dim); line-height:1.6}
+  .privacy strong{color:var(--fg); font-weight:600}
+  .privacy .lnk{background:none; border:0; color:var(--ok); font:inherit; padding:0 2px;
+    cursor:pointer; text-decoration:underline; font-weight:400}
+  .privacy .detail{display:none; margin-top:8px; padding-top:8px;
+    border-top:1px solid var(--ink-3); line-height:1.7}
+  .privacy .detail.on{display:block}
+  .privacy .detail b{color:var(--fg)}
+
+  /* 리포트 안 설문 */
+  .survey{margin-top:16px; padding-top:14px; border-top:1px solid var(--ink-3); text-align:left}
+  .survey h4{font-size:13px; color:var(--fg); margin-bottom:2px}
+  .survey .lead{font-size:11px; color:var(--fg-dim); margin-bottom:12px}
+  .survey label{display:block; font-size:12px; color:var(--fg); margin:10px 0 4px}
+  .survey textarea{width:100%; background:var(--ink-2); color:var(--fg); font:inherit;
+    font-size:12px; border:1px solid var(--ink-3); border-radius:6px; padding:7px 8px;
+    resize:vertical; min-height:38px}
+  .survey textarea:focus{outline:none; border-color:var(--ok)}
+  .q5row{display:flex; gap:6px; flex-wrap:wrap}
+  .q5b.sel{background:var(--ok); color:var(--ink-0); border-color:var(--ok); font-weight:600}
+  .sendState{font-size:11px; color:var(--fg-dim); text-align:center; margin-top:8px; min-height:15px}
+
+  svg{display:block; margin:0 auto}
+</style>
+</head>
+<body>
+
+<div class="privacy" id="privacy">
+  <span>ⓘ 이 프로토타입은 <strong>플레이 기록(횟수·시간·기기 종류)을 익명으로 저장</strong>합니다.
+  이름·이메일·위치는 수집하지 않습니다.</span>
+  <button class="lnk" id="privacyMore">자세히</button>
+  <button class="lnk" id="privacyHide">배너 닫기</button>
+  <div class="detail" id="privacyDetail">
+    <b>언제 보내나요</b> — ①5분을 채웠을 때 ②「그만두고 결과 보기」를 눌렀을 때
+    ③탭이나 브라우저를 닫을 때. 세 번째가 있는 이유는, 중간에 그만두신 분의 기록이
+    가장 알고 싶은 것이기 때문입니다.<br>
+    <b>무엇을 보내나요</b> — 무작위 세션 번호, 경과 시간(초), 기기 종류(모바일/데스크톱),
+    플레이 횟수(합성·발견·도감 열람·사냥 파견), 그리고 설문에 직접 적어주신 내용.<br>
+    <b>보내지 않는 것</b> — 이름, 이메일, 위치, 브라우저 지문(User-Agent 원문).
+    세션 번호는 매번 새로 만들어지며 다음 방문과 이어지지 않습니다.<br>
+    <b>설문은 선택입니다</b> — 빈칸으로 두셔도 됩니다.<br>
+    「배너 닫기」는 이 안내만 숨깁니다. 전송을 끄지는 않습니다 —
+    <button class="lnk" id="optOut">전송을 원치 않으면 여기를 누르세요</button>.
+  </div>
+</div>
+
+<header>
+  <h1>요괴병기 — 합성 루프</h1>
+  <span class="sub">프로토타입 · 이것은 게임이 아니라 하나의 질문입니다</span>
+  <span class="clock" id="clock">0:00</span>
+  <button class="ghost small" id="endTest">그만두고 결과 보기</button>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>조합대</h2>
+      <div class="bench">
+        <div class="slot" id="slotA" data-slot="0"><span class="ph">비어 있음</span></div>
+        <span class="plus">+</span>
+        <div class="slot" id="slotB" data-slot="1"><span class="ph">비어 있음</span></div>
+      </div>
+      <div class="row fullw">
+        <button id="fuse" disabled>합성</button>
+        <button class="ghost" id="clear">비우기</button>
+      </div>
+      <div class="log" id="log">인벤토리에서 요괴병기 두 개를 골라 조합대에 올리세요.</div>
+    </div>
+
+    <div class="panel">
+      <h2>인벤토리 <span class="count" id="invCount">0</span></h2>
+      <div id="inv"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>사냥터</h2>
+      <div class="row fullw">
+        <button class="ghost" id="hunt" style="width:100%">사냥 파견</button>
+      </div>
+      <div class="log" id="huntLog">파견하면 요괴병기 하나를 데려옵니다.</div>
+    </div>
+
+    <div class="panel">
+      <h2>도감 <span class="count"><span id="cxFound">0</span> / <span id="cxTotal">0</span></span></h2>
+      <div id="codex"></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="resultOverlay">
+  <div class="modal">
+    <div class="banner" id="resultBanner" style="visibility:hidden">신종 발견</div>
+    <div id="resultArt"></div>
+    <h3 id="resultName"></h3>
+    <div id="resultGrade" style="font-size:12px"></div>
+    <div class="opts" id="resultOpts"></div>
+    <button id="resultOk">확인</button>
+  </div>
+</div>
+
+<div class="overlay" id="reportOverlay">
+  <div class="modal report">
+    <h3 id="reportTitle">5분 경과 — 이번 세션 기록</h3>
+    <table>
+      <tr><td>합성 횟수</td><td id="rFusions">0</td></tr>
+      <tr><td>도감 열람</td><td id="rCodex">0</td></tr>
+      <tr><td>신종 발견</td><td id="rDiscover">0</td></tr>
+      <tr><td>첫 신종까지</td><td id="rFirst">—</td></tr>
+      <tr><td>사냥 파견</td><td id="rHunts">0</td></tr>
+    </table>
+    <div class="note">
+      가설: <em>결과를 확인한 직후 곧바로 다음 조합을 시도하고 싶어진다.</em><br>
+      참 신호는 <strong>합성 8회 이상 + 도감을 스스로 열어봄</strong>입니다.
+      숫자가 그에 못 미쳤다면 가설은 반증된 쪽에 가깝습니다.
+      계속 플레이해도 되고, 여기서 멈추고 돌아가도 됩니다.
+      <span id="earlyNote"></span>
+    </div>
+    <div class="survey">
+      <h4>짧은 설문</h4>
+      <div class="lead">빈칸으로 두셔도 됩니다. 한 칸만 채우셔도 그 한 칸은 저장됩니다.</div>
+
+      <label for="q1" id="q1label">1. 5분 동안 뭘 하는 게임이라고 느끼셨나요?</label>
+      <textarea id="q1" rows="2"></textarea>
+
+      <label for="q2">2. 가장 기분 좋았던 순간이 있었나요? 언제였나요? (없으면 없다고 해주세요)</label>
+      <textarea id="q2" rows="2"></textarea>
+
+      <label for="q3">3. 가장 답답하거나 지루했던 순간은요?</label>
+      <textarea id="q3" rows="2"></textarea>
+
+      <label for="q4">4. 합성할 때 어떤 조합을 고를지 어떻게 정하셨나요?</label>
+      <textarea id="q4" rows="2"></textarea>
+
+      <label>5. 내일 이 게임이 폰에 깔려 있으면 다시 켜실 것 같나요?</label>
+      <div class="q5row">
+        <button class="ghost small q5b" data-v="예">예</button>
+        <button class="ghost small q5b" data-v="아니오">아니오</button>
+        <button class="ghost small q5b" data-v="모르겠음">모르겠음</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px; justify-content:center">
+      <button id="reportOk">계속하기</button>
+      <button class="ghost small" id="sendSurvey">답변 보내기</button>
+    </div>
+    <div class="sendState" id="sendState"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   PROTOTYPE - NOT FOR PRODUCTION
+   ============================================================ */
+
+const LINE = { sword:'#3fe0d0', great:'#c05cff', knuckle:'#ff9d3f', none:'#6b7280' };
+
+const SPECIES = {
+  junk:     {name:'잡귀',     tier:0, line:'none',    eyes:1},
+  sword1:   {name:'외눈검',   tier:1, line:'sword',   eyes:1},
+  great1:   {name:'외눈대검', tier:1, line:'great',   eyes:1},
+  knuck1:   {name:'외눈너클', tier:1, line:'knuckle', eyes:1},
+  sword2:   {name:'쌍안검',   tier:2, line:'sword',   eyes:2},
+  great2:   {name:'쌍안대검', tier:2, line:'great',   eyes:2},
+  knuck2:   {name:'쌍안너클', tier:2, line:'knuckle', eyes:2},
+  chamwol:  {name:'참월',     tier:2, line:'sword',   eyes:2},
+  chulgwon: {name:'철권검',   tier:2, line:'knuckle', eyes:2},
+  bungsan:  {name:'붕산',     tier:2, line:'great',   eyes:2},
+  sword3:   {name:'삼안검',   tier:3, line:'sword',   eyes:3},
+  heukyo:   {name:'흑요',     tier:3, line:'sword',   eyes:3},
+  noemyung: {name:'뇌명',     tier:3, line:'knuckle', eyes:3},
+  wolryun:  {name:'월륜',     tier:3, line:'great',   eyes:3},
+  mumyung:  {name:'무명',     tier:4, line:'none',    eyes:0}
+};
+const ORDER = Object.keys(SPECIES);
+const STARTERS = ['sword1','great1','knuck1'];
+
+// 무순서 쌍 → 결과. 종(種)은 완전 결정론적. (하이브리드 구조의 "발견" 절반)
+const RECIPES = {
+  'sword1+sword1':'sword2',
+  'great1+great1':'great2',
+  'knuck1+knuck1':'knuck2',
+  'great1+sword1':'chamwol',
+  'knuck1+sword1':'chulgwon',
+  'great1+knuck1':'bungsan',
+  'sword2+sword2':'sword3',
+  'chamwol+chulgwon':'heukyo',
+  'bungsan+knuck2':'noemyung',
+  'chamwol+great2':'wolryun',
+  'heukyo+noemyung':'mumyung'
+};
+const key2 = (a,b) => [a,b].sort().join('+');
+
+const GRADES = [
+  {name:'하급', color:'#7a7a8c', w:50, opts:0},
+  {name:'중급', color:'#8fd0ff', w:30, opts:1},
+  {name:'상급', color:'#c05cff', w:15, opts:2},
+  {name:'극상', color:'#ffd34d', w:5,  opts:3}
+];
+const OPTION_POOL = [
+  {n:'공격',   min:3,  max:24, unit:''},
+  {n:'치명',   min:1,  max:12, unit:'%'},
+  {n:'공속',   min:2,  max:15, unit:'%'},
+  {n:'흡혈',   min:1,  max:8,  unit:'%'},
+  {n:'관통',   min:2,  max:18, unit:''},
+  {n:'요기',   min:5,  max:40, unit:''}
+];
+
+/* ---------- state ---------- */
+let uid = 1;
+const state = {
+  inv: [],
+  slots: [null, null],
+  found: new Set(),
+  stats: { fusions:0, codexOpens:0, discoveries:0, hunts:0, firstDiscovery:null },
+  startedAt: Date.now(),
+  reportShown: false,
+  endedAt: null,          // 리포트가 뜬 시점의 경과 초 (완주 300 / 조기 종료는 그 미만)
+  endedEarly: false,
+  huntReady: true
+};
+
+/* ---------- helpers ---------- */
+function rollGrade(bonus){
+  // 재료 등급이 높을수록 상위 등급 확률 상승 — 반복 동기의 원천
+  const table = GRADES.map((g,i) => ({ i, w: Math.max(1, g.w + (i>=2 ? bonus*9 : -bonus*4)) }));
+  const total = table.reduce((s,t)=>s+t.w,0);
+  let r = Math.random()*total;
+  for(const t of table){ if((r -= t.w) <= 0) return t.i; }
+  return 0;
+}
+function rollOptions(gradeIdx){
+  const n = GRADES[gradeIdx].opts;
+  const pool = OPTION_POOL.slice();
+  const out = [];
+  for(let i=0;i<n;i++){
+    const p = pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+    const v = Math.floor(p.min + Math.random()*(p.max-p.min+1)) * (1 + gradeIdx*0.35);
+    out.push({ n:p.n, v: Math.round(v), unit:p.unit });
+  }
+  return out;
+}
+function makeItem(speciesKey, gradeIdx){
+  const g = gradeIdx === undefined ? rollGrade(0) : gradeIdx;
+  return { id: uid++, sp: speciesKey, grade: g, opts: rollOptions(g) };
+}
+
+/* ---------- procedural silhouette ----------
+   원칙 ③ 「진화는 복잡도로 읽힌다」의 저비용 구현:
+   정점 수와 가시 수가 tier에 따라 단조 증가한다. 색은 단계를 나타내지 않는다. */
+function seeded(str){
+  let h = 2166136261;
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => { h = Math.imul(h ^ (h>>>15), 2246822507); h ^= h>>>13; return ((h>>>0)%10000)/10000; };
+}
+function creature(spKey, size){
+  const sp = SPECIES[spKey];
+  const col = LINE[sp.line];
+  const rnd = seeded(spKey);
+  const n = 7 + sp.tier * 4;                 // 정점 수 = 복잡도
+  const spikes = sp.tier;                    // 가시 = 단계
+  const cx = 50, cy = 50;
+  let pts = [];
+  for(let i=0;i<n;i++){
+    const ang = (i/n) * Math.PI * 2 - Math.PI/2;
+    const isSpike = spikes > 0 && i % Math.max(2, Math.floor(n/Math.max(1,spikes))) === 0;
+    const base = 26 + rnd()*7;
+    const r = isSpike ? base + 9 + rnd()*7 : base;
+    pts.push([cx + Math.cos(ang)*r, cy + Math.sin(ang)*r*0.92]);
+  }
+  const d = pts.map((p,i)=> (i?'L':'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ') + ' Z';
+
+  let eyes = '';
+  const ec = sp.eyes;
+  for(let i=0;i<ec;i++){
+    const ex = cx + (ec===1 ? 0 : (i - (ec-1)/2) * 13);
+    const ey = cy + (ec===3 && i===1 ? -9 : 0);
+    eyes += `<circle cx="${ex}" cy="${ey}" r="6.5" fill="#f2f2f7"/>` +
+            `<circle cx="${ex}" cy="${ey}" r="3" fill="#0d0d11"/>`;
+  }
+  if(ec === 0){ // 무명 — 눈이 없다
+    eyes = `<path d="M38 50 L62 50" stroke="#f2f2f7" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>`;
+  }
+
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100"
+    style="filter:drop-shadow(0 0 ${2+sp.tier*2}px ${col})">
+    <path d="${d}" fill="${col}" fill-opacity=".22" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
+    ${eyes}
+  </svg>`;
+}
+function silhouette(size){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="28" fill="#2b2b38"/>
+    <text x="50" y="57" text-anchor="middle" font-size="22" fill="#4a4a5a">?</text>
+  </svg>`;
+}
+
+/* ---------- render ---------- */
+const $ = id => document.getElementById(id);
+
+function renderInv(){
+  const el = $('inv');
+  el.innerHTML = '';
+  $('invCount').textContent = state.inv.length;
+  if(!state.inv.length){
+    el.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;grid-column:1/-1">' +
+      '비었습니다. 사냥 파견으로 데려오세요.</div>';
+    return;
+  }
+  state.inv.forEach(it => {
+    const picked = state.slots.some(s => s && s.id === it.id);
+    const g = GRADES[it.grade];
+    const div = document.createElement('div');
+    div.className = 'card' + (picked ? ' picked' : '');
+    div.innerHTML = creature(it.sp, 44) +
+      `<div class="nm">${SPECIES[it.sp].name}</div>` +
+      `<div class="gr" style="color:${g.color}">${g.name}</div>`;
+    div.onclick = () => pick(it);
+    el.appendChild(div);
+  });
+}
+
+function renderSlots(){
+  state.slots.forEach((it, i) => {
+    const el = $(i === 0 ? 'slotA' : 'slotB');
+    if(!it){
+      el.className = 'slot';
+      el.innerHTML = '<span class="ph">비어 있음</span>';
+    } else {
+      const g = GRADES[it.grade];
+      el.className = 'slot filled';
+      el.style.borderColor = LINE[SPECIES[it.sp].line];
+      el.innerHTML = creature(it.sp, 46) +
+        `<div class="nm">${SPECIES[it.sp].name}</div>` +
+        `<div class="gr" style="color:${g.color}">${g.name}</div>`;
+    }
+    if(!it) el.style.borderColor = '';
+  });
+  $('fuse').disabled = !(state.slots[0] && state.slots[1]);
+}
+
+function renderCodex(){
+  const el = $('codex');
+  el.innerHTML = '';
+  $('cxTotal').textContent = ORDER.length;
+  $('cxFound').textContent = state.found.size;
+  ORDER.forEach(k => {
+    const got = state.found.has(k);
+    const div = document.createElement('div');
+    div.className = 'cx' + (got ? '' : ' locked');
+    div.innerHTML = (got ? creature(k, 40) : silhouette(40)) +
+      `<div class="nm">${got ? SPECIES[k].name : '???'}</div>`;
+    el.appendChild(div);
+  });
+}
+
+/* ---------- actions ---------- */
+function pick(it){
+  const at = state.slots.findIndex(s => s && s.id === it.id);
+  if(at >= 0){ state.slots[at] = null; }
+  else if(!state.slots[0]){ state.slots[0] = it; }
+  else if(!state.slots[1]){ state.slots[1] = it; }
+  else { state.slots[1] = it; }
+  renderInv(); renderSlots();
+}
+
+function fuse(){
+  const [a, b] = state.slots;
+  if(!a || !b) return;
+
+  let out = RECIPES[key2(a.sp, b.sp)];
+  if(!out && a.sp === 'junk' && b.sp === 'junk'){
+    out = STARTERS[Math.floor(Math.random()*STARTERS.length)];
+  }
+  const known = !!out;
+  if(!out) out = 'junk';
+
+  const bonus = (a.grade + b.grade) / 2;
+  const item = makeItem(out, rollGrade(bonus));
+
+  state.inv = state.inv.filter(x => x.id !== a.id && x.id !== b.id);
+  state.inv.push(item);
+  state.slots = [null, null];
+  state.stats.fusions++;
+
+  const isNew = !state.found.has(out);
+  if(isNew){
+    state.found.add(out);
+    state.stats.discoveries++;
+    if(state.stats.firstDiscovery === null){
+      state.stats.firstDiscovery = Math.round((Date.now() - state.startedAt)/1000);
+    }
+  }
+
+  showResult(item, isNew, known);
+  $('log').textContent = known
+    ? `${SPECIES[a.sp].name} + ${SPECIES[b.sp].name} → ${SPECIES[out].name}`
+    : `${SPECIES[a.sp].name} + ${SPECIES[b.sp].name} → 조합이 맞지 않아 잡귀가 되었습니다.`;
+
+  renderInv(); renderSlots(); renderCodex();
+}
+
+function showResult(item, isNew, known){
+  const g = GRADES[item.grade];
+  $('resultBanner').style.visibility = isNew ? 'visible' : 'hidden';
+  $('resultBanner').textContent = isNew ? '신종 발견' : '';
+  $('resultArt').innerHTML = creature(item.sp, 110);
+  $('resultName').textContent = SPECIES[item.sp].name;
+  $('resultGrade').innerHTML = `<span style="color:${g.color}">${g.name}</span>` +
+    (known ? '' : ' <span style="color:var(--fg-dim)">· 실패작</span>');
+  $('resultOpts').innerHTML = item.opts.length
+    ? item.opts.map(o => `<div>${o.n} +${o.v}${o.unit}</div>`).join('')
+    : '<span>옵션 없음</span>';
+  $('resultOverlay').classList.add('on');
+}
+
+function hunt(){
+  if(!state.huntReady) return;
+  state.huntReady = false;
+  state.stats.hunts++;
+  const sp = STARTERS[Math.floor(Math.random()*STARTERS.length)];
+  state.inv.push(makeItem(sp));
+  $('huntLog').textContent = `${SPECIES[sp].name} 하나를 데려왔습니다.`;
+  renderInv();
+
+  const btn = $('hunt');
+  btn.disabled = true;
+  let left = 4;
+  btn.textContent = `파견 중… ${left}`;
+  const t = setInterval(() => {
+    left--;
+    if(left <= 0){
+      clearInterval(t);
+      state.huntReady = true;
+      btn.disabled = false;
+      btn.textContent = '사냥 파견';
+    } else {
+      btn.textContent = `파견 중… ${left}`;
+    }
+  }, 1000);
+}
+
+/* ---------- instrumentation ---------- */
+$('codex').addEventListener('click', () => state.stats.codexOpens++);
+// 도감이 항상 보이는 레이아웃이므로, "스스로 열어봄"은 도감 영역 클릭으로 근사한다.
+
+/* ---------- playtest telemetry ----------
+   GitHub Pages 는 정적 호스팅이라 서버가 없다. Apps Script 웹앱 하나로 보낸다.
+   endpoint 가 비어 있으면 전송을 건너뛰고 콘솔에만 찍는다 — 로컬에서 열었을 때의 기본 상태.
+   코드: tools/playtest/Code.gs · 셋업: tools/playtest/README.md */
+const TELEMETRY = {
+  endpoint: 'https://script.google.com/macros/s/AKfycbzCMz6bMwBm2ZToZLtZSIA6r30xhzy7lgYgyyz6hWpOWbxiwc7bqPXspRevA-CWg4G87w/exec',                   // ← Apps Script 배포 URL (.../exec) 을 여기에
+  key: 'yokai-proto-2026',        // Code.gs 의 PROTO_KEY 와 같아야 한다
+  proto: 'fusion'
+};
+
+const SID = (() => {
+  try { return crypto.randomUUID().replace(/-/g,'').slice(0,8); }
+  catch(e){ return Math.random().toString(36).slice(2,10); }
+})();
+// matchMedia 가 없는 환경도 있다. 기기 구분 하나 때문에 프로토타입 전체가 죽으면 안 된다
+const DEVICE = (() => {
+  try { return window.matchMedia('(pointer:coarse)').matches ? 'mobile' : 'desktop'; }
+  catch(e){ return 'desktop'; }
+})();
+
+let optedOut = false;
+try { optedOut = localStorage.getItem('yokai-optout') === '1'; } catch(e){}
+
+const survey = { q1:'', q2:'', q3:'', q4:'', q5:'' };
+const anySurvey = () => Object.values(survey).some(v => v.trim() !== '');
+const elapsed = () => Math.floor((Date.now() - state.startedAt)/1000);
+
+function statsPayload(){
+  const st = state.stats;
+  return {
+    fusions: st.fusions, codexOpens: st.codexOpens, discoveries: st.discoveries,
+    firstDiscovery: st.firstDiscovery, hunts: st.hunts
+  };
+}
+
+function post(payload){
+  if(optedOut) return false;
+  const body = JSON.stringify(payload);
+  if(!TELEMETRY.endpoint){ console.log('[telemetry 미설정]', body); return false; }
+  try{
+    // sendBeacon 은 탭이 닫히는 중에도 전송을 끝까지 보장하는 유일한 경로다.
+    // text/plain 이어야 CORS preflight 없이 Apps Script 가 본문을 받는다.
+    const blob = new Blob([body], {type:'text/plain;charset=UTF-8'});
+    if(navigator.sendBeacon && navigator.sendBeacon(TELEMETRY.endpoint, blob)) return true;
+    fetch(TELEMETRY.endpoint, {method:'POST', body, keepalive:true, mode:'no-cors'});
+    return true;
+  }catch(e){ return false; }      // 전송 실패가 플레이를 막아서는 안 된다
+}
+
+const sendRun = ended => post({
+  type:'run', k:TELEMETRY.key, sid:SID, proto:TELEMETRY.proto,
+  ended, sec:elapsed(), device:DEVICE, stats:statsPayload(),
+  survey: anySurvey() ? survey : null
+});
+
+const sendSurveyOnly = () => anySurvey() && post({
+  type:'survey', k:TELEMETRY.key, sid:SID, proto:TELEMETRY.proto,
+  sec:elapsed(), device:DEVICE, survey
+});
+
+/* 탭을 닫는 사람이 가장 많고, 지금까지 그들의 기록은 전부 사라졌다.
+   모바일은 앱 전환만으로도 hidden 이 뜨므로 15초 스로틀을 둔다. 같은 sid 로 close 행이
+   여러 개 남을 수 있으며, 그중 sec 가 가장 큰 것이 실제 이탈 시점이다. */
+let lastClose = 0;
+function onLeave(){
+  if(Date.now() - lastClose < 15000) return;
+  lastClose = Date.now();
+  sendRun('close');
+}
+addEventListener('pagehide', onLeave);
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'hidden') onLeave();
+});
+
+// 초 → "1분 27초" / "45초". 조기 종료 시점을 사람이 읽는 형태로 남긴다
+function fmtDur(s){
+  return s >= 60 ? `${Math.floor(s/60)}분 ${s%60}초` : `${s}초`;
+}
+
+// 타이머(300초 경과)와 「그만두고 결과 보기」 버튼이 공유하는 단일 경로
+function showReport(early){
+  if(state.reportShown) return;
+  state.reportShown = true;
+  state.endedAt = Math.floor((Date.now() - state.startedAt)/1000);
+  state.endedEarly = !!early;
+
+  $('rFusions').textContent  = state.stats.fusions;
+  $('rCodex').textContent    = state.stats.codexOpens;
+  $('rDiscover').textContent = state.stats.discoveries;
+  $('rFirst').textContent    = state.stats.firstDiscovery === null
+    ? '없음' : state.stats.firstDiscovery + '초';
+  $('rHunts').textContent    = state.stats.hunts;
+
+  // 조기 종료를 기록에 정직하게 남긴다 — 완주하지 않은 세션이 「5분」으로 보고되면 안 된다
+  $('reportTitle').textContent = early
+    ? `${fmtDur(state.endedAt)} 만에 종료 — 이번 세션 기록`
+    : '5분 경과 — 이번 세션 기록';
+  $('earlyNote').innerHTML = early
+    ? `<br><br><strong>${fmtDur(state.endedAt)}에 종료하셨습니다.</strong> 5분을 채우지 않으셨으므로 `
+      + `위 숫자는 참 신호 기준(합성 8회)과 직접 비교할 수 없습니다. 대신 <strong>언제 그만두고 `
+      + `싶어졌는지가 이 세션에서 가장 값진 정보입니다</strong> — 그 시점에 무엇이 지루했는지 한 문장만 남겨주세요.`
+    : '';
+
+  // 1번 문항 문구 — 조기 종료에는 「5분 동안」이 거짓이 된다
+  $('q1label').textContent = early
+    ? '1. 방금 플레이하신 동안 뭘 하는 게임이라고 느끼셨나요?'
+    : '1. 5분 동안 뭘 하는 게임이라고 느끼셨나요?';
+
+  // 기록은 한 번만 남는다. 이후 버튼은 그 스냅샷을 다시 보여주는 역할만 한다
+  const eb = $('endTest');
+  eb.classList.remove('armed');
+  eb.textContent = '결과 다시 보기';
+
+  sendRun(early ? 'early' : 'done');
+  $('reportOverlay').classList.add('on');
+}
+
+function tick(){
+  const s = Math.floor((Date.now() - state.startedAt)/1000);
+  $('clock').textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  if(s >= 300) showReport(false);
+}
+
+/* ---------- wire up ---------- */
+$('fuse').onclick     = fuse;
+$('clear').onclick    = () => { state.slots = [null,null]; renderInv(); renderSlots(); };
+$('hunt').onclick     = hunt;
+$('resultOk').onclick = () => $('resultOverlay').classList.remove('on');
+$('reportOk').onclick = () => $('reportOverlay').classList.remove('on');
+
+/* 설문 — 칸을 벗어날 때마다 그 시점 답을 보낸다.
+   Code.gs 가 sid 로 기존 행을 찾아 덮어쓰므로, 3문항만 쓰고 나가도 그 3개는 남는다. */
+function flash(msg){
+  $('sendState').textContent = msg;
+  clearTimeout(flash._t);
+  flash._t = setTimeout(() => { $('sendState').textContent = ''; }, 3000);
+}
+['q1','q2','q3','q4'].forEach(id => {
+  $(id).addEventListener('change', () => {      // change 는 포커스를 벗어날 때 발생한다
+    survey[id] = $(id).value.trim();
+    if(sendSurveyOnly()) flash('저장했습니다');
+  });
+});
+document.querySelectorAll('.q5b').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.q5b').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+    survey.q5 = b.dataset.v;
+    if(sendSurveyOnly()) flash('저장했습니다');
+  };
+});
+$('sendSurvey').onclick = () => {
+  ['q1','q2','q3','q4'].forEach(id => survey[id] = $(id).value.trim());
+  if(!anySurvey()){ flash('한 칸이라도 채워주시면 보냅니다'); return; }
+  flash(sendSurveyOnly() ? '보냈습니다. 고맙습니다.' : '지금은 전송이 꺼져 있습니다');
+};
+
+/* 수집 고지 배너 */
+$('privacyMore').onclick = () => {
+  const d = $('privacyDetail'); d.classList.toggle('on');
+  $('privacyMore').textContent = d.classList.contains('on') ? '접기' : '자세히';
+};
+$('privacyHide').onclick = () => { $('privacy').style.display = 'none'; };
+$('optOut').onclick = () => {
+  optedOut = true;
+  try { localStorage.setItem('yokai-optout','1'); } catch(e){}
+  $('privacy').textContent = '전송을 껐습니다. 이 브라우저에서는 더 이상 보내지 않습니다. 계속 플레이하셔도 됩니다.';
+};
+if(optedOut) $('privacy').textContent = '전송이 꺼져 있습니다. 이 브라우저에서는 아무것도 보내지 않습니다.';
+
+/* 조기 종료 — 5분을 채우지 못하는 테스터의 세션을 버리지 않기 위한 출구.
+   오조작 방지를 위해 2단계. confirm() 은 file:// 에서 막힐 수 있어 쓰지 않는다. */
+let endArm = null;
+function disarmEnd(){
+  clearTimeout(endArm); endArm = null;
+  $('endTest').classList.remove('armed');
+  $('endTest').textContent = '그만두고 결과 보기';
+}
+$('endTest').onclick = () => {
+  if(state.reportShown){ $('reportOverlay').classList.add('on'); return; }
+  if(endArm){ disarmEnd(); showReport(true); return; }
+  const b = $('endTest');
+  b.textContent = '한 번 더 누르면 종료';
+  b.classList.add('armed');
+  endArm = setTimeout(disarmEnd, 3000);
+};
+$('resultOverlay').onclick = e => { if(e.target.id === 'resultOverlay') $('resultOverlay').classList.remove('on'); };
+
+/* ---------- init ---------- */
+for(let i=0;i<20;i++){
+  const sp = STARTERS[Math.floor(Math.random()*STARTERS.length)];
+  const it = makeItem(sp);
+  state.inv.push(it);
+  state.found.add(sp);
+}
+renderInv(); renderSlots(); renderCodex();
+setInterval(tick, 1000); tick();
+</script>
+</body>
+</html>
